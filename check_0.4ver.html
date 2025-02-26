@@ -3,11 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <title>For Jayson</title>
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
     body {
       margin: 0;
       padding: 0;
-      background-color: #4B0082; /* 전체 배경색을 FBB44A로 설정 */
+      background-color: #4B0082; /* 전체 배경색 */
       font-family: Arial, sans-serif;
     }
     .header {
@@ -23,7 +25,7 @@
       align-items: center;
     }
     .header h1 img {
-      width: 60px; /* 이미지 크기는 필요에 따라 조정 */
+      width: 60px; /* 이미지 크기 조정 */
       height: auto;
       margin-right: 10px;
     }
@@ -39,7 +41,7 @@
       right: 20px;
       font-size: 1em;
     }
-    /* 중앙 콘텐츠 컨테이너: 흰색 배경으로 좌우 FBB44A가 보이도록 */
+    /* 중앙 콘텐츠 컨테이너: 흰색 배경 */
     .main-container {
       background-color: #fff;
       max-width: 800px;
@@ -69,6 +71,19 @@
       width: 100px;
       text-align: center;
     }
+    .chart-container {
+      margin-top: 50px;
+      padding: 20px;
+    }
+    .chart-buttons {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+    .chart-buttons button {
+      font-size: 1em;
+      margin: 0 5px;
+      padding: 5px 10px;
+    }
   </style>
 </head>
 <body>
@@ -80,7 +95,7 @@
     <div class="from-right">From Jayden</div>
   </div>
   
-  <!-- 메인 콘텐츠를 감싸는 중앙 컨테이너 -->
+  <!-- 메인 콘텐츠 컨테이너 -->
   <div class="main-container">
     <div class="section">현재가</div>
     <div class="price" id="price">Loading...</div>
@@ -92,18 +107,33 @@
     </div>
     
     <div class="price" id="total">Total: Loading...</div>
+    
+    <!-- 차트 영역 -->
+    <div class="chart-container">
+      <div class="section">가격 차트</div>
+      <div class="chart-buttons">
+        <button onclick="updateChart('day')">하루</button>
+        <button onclick="updateChart('week')">일주일</button>
+        <button onclick="updateChart('month')">한달</button>
+        <button onclick="updateChart('all')">전체</button>
+      </div>
+      <canvas id="chart" width="700" height="400"></canvas>
+    </div>
   </div>
   
   <script>
+    let chartInstance = null;
+    
+    // 현재가 및 총액 업데이트 함수 (기존 기능)
     async function fetchPrice() {
       try {
-        // 1. OKX API에서 PI-USDT 티커 정보를 가져옵니다.
+        // 1. OKX API에서 PI-USDT 티커 정보를 가져옴
         const response = await fetch('https://www.okx.com/api/v5/market/ticker?instId=PI-USDT');
         const data = await response.json();
         if (data && data.data && data.data.length > 0) {
           const usdPrice = parseFloat(data.data[0].last);
           
-          // 2. 무료 환율 API (open.er-api.com)에서 USD 기준 환율 정보를 가져옵니다.
+          // 2. 무료 환율 API에서 USD 기준 환율 정보를 가져옴
           const rateResponse = await fetch('https://open.er-api.com/v6/latest/USD');
           const rateData = await rateResponse.json();
           
@@ -114,7 +144,7 @@
               const gbpPrice = usdPrice * gbpRate;
               const krwPrice = usdPrice * krwRate;
               
-              // 천 단위 쉼표 및 소수점 자리수 포맷팅
+              // 천 단위 쉼표 및 소수점 포맷팅
               const formattedUsd = usdPrice.toLocaleString("en-US", {minimumFractionDigits: 4, maximumFractionDigits: 4});
               const formattedGbp = gbpPrice.toLocaleString("en-GB", {minimumFractionDigits: 4, maximumFractionDigits: 4});
               const formattedKrw = krwPrice.toLocaleString("ko-KR", {maximumFractionDigits: 0});
@@ -125,7 +155,7 @@
                 "PI Price (GBP): £" + formattedGbp + "<br>" +
                 "PI Price (KRW): ₩" + formattedKrw;
               
-              // 3. 인풋 박스에 입력된 Pi 개수에 따른 총 가격 계산
+              // 입력된 Pi 개수에 따른 총 가격 계산
               const quantity = parseFloat(document.getElementById('piQuantity').value) || 0;
               const totalUsd = usdPrice * quantity;
               const totalGbp = gbpPrice * quantity;
@@ -157,12 +187,105 @@
         document.getElementById('total').innerText = "Error calculating total";
       }
     }
-    // 페이지 로드 후 즉시 가격 업데이트 및 1초마다 갱신
+    
+    // 가격 데이터를 기반으로 차트를 업데이트하는 함수
+    async function updateChart(period) {
+      const params = getChartParameters(period);
+      const url = `https://www.okx.com/api/v5/market/history-candles?instId=PI-USDT&bar=${params.bar}&limit=${params.limit}`;
+      try {
+        const response = await fetch(url);
+        const result = await response.json();
+        if (result && result.data) {
+          // OKX API는 최신 데이터가 배열의 앞쪽에 있을 수 있으므로 역순 정렬
+          const candles = result.data.reverse();
+          const labels = [];
+          const prices = [];
+          candles.forEach(candle => {
+            // candle: [timestamp, open, high, low, close, volume, ...]
+            const ts = Number(candle[0]);
+            // 간단한 시간 표시 (하루, 일주일은 시:분, 그 이상은 날짜)
+            let label = "";
+            if(period === 'day' || period === 'week'){
+              label = new Date(ts).toLocaleTimeString();
+            } else {
+              label = new Date(ts).toLocaleDateString();
+            }
+            labels.push(label);
+            prices.push(parseFloat(candle[4]));
+          });
+          createOrUpdateChart(labels, prices);
+        }
+      } catch (error) {
+        console.error("Error fetching chart data:", error);
+      }
+    }
+    
+    // 차트 생성 또는 업데이트 함수 (Chart.js 사용)
+    function createOrUpdateChart(labels, data) {
+      const ctx = document.getElementById('chart').getContext('2d');
+      if (chartInstance) {
+        chartInstance.data.labels = labels;
+        chartInstance.data.datasets[0].data = data;
+        chartInstance.update();
+      } else {
+        chartInstance = new Chart(ctx, {
+          type: 'line',
+          data: {
+            labels: labels,
+            datasets: [{
+              label: 'PI Price (USD)',
+              data: data,
+              borderColor: 'rgba(75, 192, 192, 1)',
+              backgroundColor: 'rgba(75, 192, 192, 0.2)',
+              fill: true,
+              tension: 0.1
+            }]
+          },
+          options: {
+            scales: {
+              x: {
+                display: true,
+                title: {
+                  display: true,
+                  text: 'Time'
+                }
+              },
+              y: {
+                display: true,
+                title: {
+                  display: true,
+                  text: 'Price (USD)'
+                }
+              }
+            }
+          }
+        });
+      }
+    }
+    
+    // 기간별로 사용할 파라미터 결정 함수
+    function getChartParameters(period) {
+      switch(period) {
+        case 'day':
+          return { bar: '5m', limit: 288 };
+        case 'week':
+          return { bar: '1H', limit: 168 };
+        case 'month':
+          return { bar: '4H', limit: 180 };
+        case 'all':
+          return { bar: '1D', limit: 300 };
+        default:
+          return { bar: '5m', limit: 288 };
+      }
+    }
+    
+    // 초기 실행: 가격 및 차트 업데이트
     fetchPrice();
     setInterval(fetchPrice, 1000);
-    
-    // 인풋 박스 값 변경 시에도 총 가격을 업데이트
+    // 인풋 박스 변경 시 총 가격 업데이트
     document.getElementById('piQuantity').addEventListener('input', fetchPrice);
+    // 초기 차트: 하루 기간
+    updateChart('day');
   </script>
 </body>
 </html>
