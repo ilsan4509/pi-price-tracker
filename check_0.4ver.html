@@ -97,12 +97,12 @@
   
   <!-- 메인 콘텐츠 컨테이너 -->
   <div class="main-container">
-    <div class="section">현재가</div>
+    <div class="section">PI Price</div>
     <div class="price" id="price">Loading...</div>
 
-    <div class="section">가격</div>
+    <div class="section">Total Value</div>
     <div class="input-container">
-      <label for="piQuantity">Pi 개수:</label>
+      <label for="piQuantity">Pi QTY:</label>
       <input type="number" id="piQuantity" value="0" min="0" step="any">
     </div>
     
@@ -112,10 +112,10 @@
     <div class="chart-container">
       <div class="section">가격 차트</div>
       <div class="chart-buttons">
-        <button onclick="updateChart('day')">하루</button>
-        <button onclick="updateChart('week')">일주일</button>
-        <button onclick="updateChart('month')">한달</button>
-        <button onclick="updateChart('all')">전체</button>
+        <button onclick="updateChart('day')">Day</button>
+        <button onclick="updateChart('week')">Week</button>
+        <button onclick="updateChart('month')">Month</button>
+        <button onclick="updateChart('all')">All</button>
       </div>
       <canvas id="chart" width="700" height="400"></canvas>
     </div>
@@ -151,9 +151,9 @@
               
               // 1 PI 당 가격 표시
               document.getElementById('price').innerHTML = 
-                "PI Price (USD): $" + formattedUsd + "<br>" +
-                "PI Price (GBP): £" + formattedGbp + "<br>" +
-                "PI Price (KRW): ₩" + formattedKrw;
+                "(USD): $" + formattedUsd + "<br>" +
+                "(GBP): £" + formattedGbp + "<br>" +
+                "(KRW): ₩" + formattedKrw;
               
               // 입력된 Pi 개수에 따른 총 가격 계산
               const quantity = parseFloat(document.getElementById('piQuantity').value) || 0;
