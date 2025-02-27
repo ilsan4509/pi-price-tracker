@@ -5,6 +5,8 @@
   <title>For Jayson</title>
   <!-- Chart.js CDN -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Chart.js Annotation Plugin CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation"></script>
   <style>
     body {
       margin: 0;
@@ -70,6 +72,7 @@
       padding: 5px;
       width: 100px;
       text-align: center;
+      margin: 5px;
     }
     .chart-container {
       margin-top: 50px;
@@ -97,6 +100,7 @@
   
   <!-- 메인 콘텐츠 컨테이너 -->
   <div class="main-container">
+    <!-- 현재가 및 총액 -->
     <div class="section">PI Price</div>
     <div class="price" id="price">Loading...</div>
 
@@ -107,6 +111,17 @@
     </div>
     
     <div class="price" id="total">Total: Loading...</div>
+    
+    <!-- 매수가격 및 수익 계산 옵션 -->
+    <div class="input-container">
+      <label for="buyPrice">Buy Price (USD):</label>
+      <input type="number" id="buyPrice" value="0" min="0" step="any">
+      <label>
+        <input type="checkbox" id="toggleProfit">
+        Show Profit
+      </label>
+    </div>
+    <div class="price" id="profit" style="display: none;">Profit: Loading...</div>
     
     <!-- 차트 영역 -->
     <div class="chart-container">
@@ -123,8 +138,9 @@
   
   <script>
     let chartInstance = null;
-    
-    // 현재가 및 총액 업데이트 함수 (기존 기능)
+    let latestUsdPrice = 0; // 최신 PI 가격 (USD)를 전역 변수에 저장
+
+    // 현재가 및 총액 업데이트 함수
     async function fetchPrice() {
       try {
         // 1. OKX API에서 PI-USDT 티커 정보를 가져옴
@@ -132,6 +148,7 @@
         const data = await response.json();
         if (data && data.data && data.data.length > 0) {
           const usdPrice = parseFloat(data.data[0].last);
+          latestUsdPrice = usdPrice;
           
           // 2. 무료 환율 API에서 USD 기준 환율 정보를 가져옴
           const rateResponse = await fetch('https://open.er-api.com/v6/latest/USD');
@@ -169,6 +186,9 @@
                 "(USD): $" + formattedTotalUsd + "<br>" +
                 "(GBP): £" + formattedTotalGbp + "<br>" +
                 "(KRW): ₩" + formattedTotalKrw;
+              
+              // 수익 계산 업데이트 (체크박스가 켜져 있으면)
+              updateProfit(usdPrice, quantity);
             } else {
               document.getElementById('price').innerText = "Error fetching exchange rates";
               document.getElementById('total').innerText = "Error calculating total";
@@ -188,44 +208,82 @@
       }
     }
     
-    // 가격 데이터를 기반으로 차트를 업데이트하는 함수
-    async function updateChart(period) {
-      const params = getChartParameters(period);
-      const url = `https://www.okx.com/api/v5/market/history-candles?instId=PI-USDT&bar=${params.bar}&limit=${params.limit}`;
-      try {
-        const response = await fetch(url);
-        const result = await response.json();
-        if (result && result.data) {
-          // OKX API는 최신 데이터가 배열의 앞쪽에 있을 수 있으므로 역순 정렬
-          const candles = result.data.reverse();
-          const labels = [];
-          const prices = [];
-          candles.forEach(candle => {
-            // candle: [timestamp, open, high, low, close, volume, ...]
-            const ts = Number(candle[0]);
-            // 간단한 시간 표시 (하루, 일주일은 시:분, 그 이상은 날짜)
-            let label = "";
-            if(period === 'day' || period === 'week'){
-              label = new Date(ts).toLocaleTimeString();
-            } else {
-              label = new Date(ts).toLocaleDateString();
-            }
-            labels.push(label);
-            prices.push(parseFloat(candle[4]));
-          });
-          createOrUpdateChart(labels, prices);
-        }
-      } catch (error) {
-        console.error("Error fetching chart data:", error);
+    // 수익 계산 함수: 매수가격(buyPrice)와 최신 가격(latestUsdPrice)을 비교
+    function updateProfit(currentPrice, quantity) {
+      const toggle = document.getElementById('toggleProfit').checked;
+      const profitDiv = document.getElementById('profit');
+      if (!toggle) {
+        profitDiv.style.display = 'none';
+        return;
       }
+      profitDiv.style.display = 'block';
+      const buyPrice = parseFloat(document.getElementById('buyPrice').value) || 0;
+      if (buyPrice <= 0) {
+        profitDiv.innerHTML = "Please enter your buy price.";
+        return;
+      }
+      // 수익률 및 총 수익 계산
+      const profitPerPi = currentPrice - buyPrice;
+      const profitPercent = (profitPerPi / buyPrice) * 100;
+      const totalProfit = profitPerPi * quantity;
+      
+      const formattedProfitPercent = profitPercent.toFixed(2);
+      const formattedTotalProfit = totalProfit.toLocaleString("en-US", {minimumFractionDigits: 4, maximumFractionDigits: 4});
+      
+      // 색상: 수익이 양수면 초록, 음수면 빨강, 0이면 기본색상
+      let color = "black";
+      if (profitPercent > 0) color = "green";
+      else if (profitPercent < 0) color = "red";
+      
+      profitDiv.innerHTML = `<span style="color:${color};">
+        Profit: ${formattedProfitPercent}% (${formattedTotalProfit} USD)
+      </span>`;
     }
     
-    // 차트 생성 또는 업데이트 함수 (Chart.js 사용)
+    // 차트 데이터를 기반으로 차트를 생성 또는 업데이트하는 함수 (Chart.js + Annotation)
     function createOrUpdateChart(labels, data) {
       const ctx = document.getElementById('chart').getContext('2d');
+      // 계산: 지지선(최저가)와 저항선(최고가)
+      const support = Math.min(...data);
+      const resistance = Math.max(...data);
+      
+      const annotationOptions = {
+        annotations: {
+          supportLine: {
+            type: 'line',
+            yMin: support,
+            yMax: support,
+            borderColor: 'blue',
+            borderWidth: 2,
+            label: {
+              content: 'Support',
+              enabled: true,
+              backgroundColor: 'blue'
+            }
+          },
+          resistanceLine: {
+            type: 'line',
+            yMin: resistance,
+            yMax: resistance,
+            borderColor: 'red',
+            borderWidth: 2,
+            label: {
+              content: 'Resistance',
+              enabled: true,
+              backgroundColor: 'red'
+            }
+          }
+        }
+      };
+      
       if (chartInstance) {
         chartInstance.data.labels = labels;
         chartInstance.data.datasets[0].data = data;
+        // 업데이트 annotation plugin 설정
+        chartInstance.options.plugins.annotation.annotations.supportLine.yMin = support;
+        chartInstance.options.plugins.annotation.annotations.supportLine.yMax = support;
+        chartInstance.options.plugins.annotation.annotations.resistanceLine.yMin = resistance;
+        chartInstance.options.plugins.annotation.annotations.resistanceLine.yMax = resistance;
         chartInstance.update();
       } else {
         chartInstance = new Chart(ctx, {
@@ -245,25 +303,22 @@
             scales: {
               x: {
                 display: true,
-                title: {
-                  display: true,
-                  text: 'Time'
-                }
+                title: { display: true, text: 'Time' }
               },
               y: {
                 display: true,
-                title: {
-                  display: true,
-                  text: 'Price (USD)'
-                }
+                title: { display: true, text: 'Price (USD)' }
               }
+            },
+            plugins: {
+              annotation: annotationOptions
             }
           }
         });
       }
     }
     
-    // 기간별로 사용할 파라미터 결정 함수
+    // 기간별 파라미터 설정 함수 (OKX API 기준)
     function getChartParameters(period) {
       switch(period) {
         case 'day':
@@ -279,11 +334,43 @@
       }
     }
     
+    // 차트 업데이트 함수: OKX 히스토리 캔들 데이터를 사용
+    async function updateChart(period) {
+      const params = getChartParameters(period);
+      const url = `https://www.okx.com/api/v5/market/history-candles?instId=PI-USDT&bar=${params.bar}&limit=${params.limit}`;
+      try {
+        const response = await fetch(url);
+        const result = await response.json();
+        if (result && result.data) {
+          // OKX API는 최신 데이터가 배열 앞쪽에 있을 수 있으므로 역순 정렬
+          const candles = result.data.reverse();
+          const labels = [];
+          const prices = [];
+          candles.forEach(candle => {
+            // candle: [timestamp, open, high, low, close, volume, ...]
+            const ts = Number(candle[0]);
+            let label = "";
+            if(period === 'day' || period === 'week'){
+              label = new Date(ts).toLocaleTimeString();
+            } else {
+              label = new Date(ts).toLocaleDateString();
+            }
+            labels.push(label);
+            prices.push(parseFloat(candle[4]));
+          });
+          createOrUpdateChart(labels, prices);
+        }
+      } catch (error) {
+        console.error("Error fetching chart data:", error);
+      }
+    }
+    
     // 초기 실행: 가격 및 차트 업데이트
     fetchPrice();
     setInterval(fetchPrice, 1000);
-    // 인풋 박스 변경 시 총 가격 업데이트
     document.getElementById('piQuantity').addEventListener('input', fetchPrice);
+    document.getElementById('buyPrice').addEventListener('input', () => updateProfit(latestUsdPrice, parseFloat(document.getElementById('piQuantity').value) || 0));
+    document.getElementById('toggleProfit').addEventListener('change', () => updateProfit(latestUsdPrice, parseFloat(document.getElementById('piQuantity').value) || 0));
     // 초기 차트: 하루 기간
     updateChart('day');
   </script>
