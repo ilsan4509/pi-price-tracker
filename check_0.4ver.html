@@ -122,6 +122,13 @@
       </label>
     </div>
     <div class="price" id="profit" style="display: none;">Profit: Loading...</div>
+
+    <!-- 예상 가격 -->
+    <div class="input-container">
+      <label for="desiredPrice">Desired Price (USD):</label>
+      <input type="number" id="desiredPrice" value="0" min="0" step="any">
+    </div>
+    <div class="price" id="desiredTotal">Desired Total: Loading...</div>
     
     <!-- 차트 영역 -->
     <div class="chart-container">
@@ -139,6 +146,8 @@
   <script>
     let chartInstance = null;
     let latestUsdPrice = 0; // 최신 PI 가격 (USD)를 전역 변수에 저장
+    let globalGbpRate = 0;
+    let globalKrwRate = 0;
 
     // 현재가 및 총액 업데이트 함수
     async function fetchPrice() {
@@ -155,11 +164,12 @@
           const rateData = await rateResponse.json();
           
           if (rateData && rateData.result === "success" && rateData.rates) {
-            const gbpRate = rateData.rates.GBP;
-            const krwRate = rateData.rates.KRW;
-            if (gbpRate && krwRate) {
-              const gbpPrice = usdPrice * gbpRate;
-              const krwPrice = usdPrice * krwRate;
+            globalGbpRate = rateData.rates.GBP;
+            globalKrwRate = rateData.rates.KRW;
+            updateTotal(usdPrice, globalGbpRate, globalKrwRate);
+            if (globalGbpRate && globalKrwRate) {
+              const gbpPrice = usdPrice * globalGbpRate;
+              const krwPrice = usdPrice * globalKrwRate;
               
               // 천 단위 쉼표 및 소수점 포맷팅
               const formattedUsd = usdPrice.toLocaleString("en-US", {minimumFractionDigits: 4, maximumFractionDigits: 4});
@@ -203,6 +213,7 @@
         }
       } catch (error) {
         console.error("Error fetching data:", error);
+        alert("Error fetching price data: " + error.message);
         document.getElementById('price').innerText = "Error fetching price data";
         document.getElementById('total').innerText = "Error calculating total";
       }
@@ -364,6 +375,30 @@
         console.error("Error fetching chart data:", error);
       }
     }
+
+    function updateTotal(usdPrice, globalGbpRate, globalKrwRate) {
+      const quantity = parseFloat(document.getElementById('piQuantity').value) || 0;
+      const totalUsd = usdPrice * quantity;
+      const totalGbp = totalUsd * globalGbpRate;
+      const totalKrw = totalUsd * globalKrwRate;
+      document.getElementById('total').innerHTML = 
+        "(USD): $" + totalUsd.toFixed(4) + "<br>" +
+        "(GBP): £" + totalGbp.toFixed(4) + "<br>" +
+        "(KRW): ₩" + totalKrw.toFixed(0);
+      updateDesiredTotal(globalGbpRate, globalKrwRate);
+    }
+    function updateDesiredTotal() {
+      const desiredPrice = parseFloat(document.getElementById('desiredPrice').value) || 0;
+      const quantity = parseFloat(document.getElementById('piQuantity').value) || 0;
+      const desiredTotalUsd = desiredPrice * quantity;
+      const desiredTotalGbp = desiredTotalUsd * globalGbpRate;
+      const desiredTotalKrw = desiredTotalUsd * globalKrwRate;
+
+      document.getElementById('desiredTotal').innerHTML = 
+        "(USD): $" + desiredTotalUsd.toLocaleString("en-US", {minimumFractionDigits: 4, maximumFractionDigits: 4}) + "<br>" +
+        "(GBP): £" + desiredTotalGbp.toLocaleString("en-GB", {minimumFractionDigits: 4, maximumFractionDigits: 4}) + "<br>" +
+        "(KRW): ₩" + desiredTotalKrw.toLocaleString("ko-KR", {maximumFractionDigits: 0});
+    }
     
     // 초기 실행: 가격 및 차트 업데이트
     fetchPrice();
@@ -371,6 +406,7 @@
     document.getElementById('piQuantity').addEventListener('input', fetchPrice);
     document.getElementById('buyPrice').addEventListener('input', () => updateProfit(latestUsdPrice, parseFloat(document.getElementById('piQuantity').value) || 0));
     document.getElementById('toggleProfit').addEventListener('change', () => updateProfit(latestUsdPrice, parseFloat(document.getElementById('piQuantity').value) || 0));
+    document.getElementById('desiredPrice').addEventListener('input', updateDesiredTotal);
     // 초기 차트: 하루 기간
     updateChart('day');
   </script>
